@@ -195,3 +195,106 @@
 
 2. **Scaling:**
    Services will be horizontally scalable using Kubernetes for orchestration, allowing multiple instances of services like the Music Player and Beat Upload service to handle large traffic volumes efficiently.
+
+
+## Laboratory 2
+
+### Updated System Diagram
+
+![Updated System Diagram](diagram_lab2.png)
+
+### Theoretical Description of New System Additions
+
+1. **Service Discovery**:
+   - The addition of a Service Discovery component ensures that services in the system can dynamically locate each other without needing hard-coded addresses. This enhances scalability and resilience by allowing services to be added or removed seamlessly.
+
+2. **ELK Stack (Elasticsearch, Logstash, and Kibana)**:
+   - **Purpose**: The ELK stack is incorporated for centralized logging and monitoring of all services within the system. It collects logs, processes them, and visualizes them for easy analysis.
+   - **Integration**: Both the **User and File Service** and the **Notification Service** are connected to the ELK stack to provide real-time logs and metrics, enabling better observability and troubleshooting.
+
+3. **Data Warehouse**:
+   - **Description**: A data warehouse has been introduced to store and analyze data aggregated from both **MongoDB** and **AWS**.
+   - **Staging Area**: The staging area acts as an intermediary where data from **MongoDB** (primary and replicated nodes) and **AWS** is cleaned and formatted before being loaded into the data warehouse.
+
+4. **Redis Replication**:
+   - **Details**: Replication has been added for **Redis** to improve the high availability of the **Notification Service**. Multiple Redis instances ensure that if one instance fails, the others can continue to handle requests, maintaining service continuity.
+
+6. **2-Phase Commit Protocol (2PC)**:
+   - **Purpose**: Implemented in the **User and File Service** to ensure data consistency when operations span multiple services or databases. This protocol coordinates transactions to commit or roll back changes to maintain data integrity.
+
+7. **Data Redundancy and Replication for MongoDB**:
+   - **Setup**: The main **MongoDB** instance (WR) writes data, and replicated instances (RR1 and RR2) provide read redundancy and improve data availability. This setup ensures that data remains accessible even if the primary instance goes down.
+  
+### Postman Collection and Endpoint hierarchy
+* **UserFile Service**:
+```json
+POST url/user/login
+{ 
+  "email": "email",
+  "password": "password"
+}
+
+POST url/user/signup
+{
+  "username": "username",
+  "email": "email",
+  "password": "password"
+}
+POST url/beats/upload
+{
+     
+      "title": "Chill Vibes",
+      "artist": "Producer A",
+      "beat": "s3://path_to_beat"
+}
+```
+* **Notification Service**:
+```json
+POST url/notify-login
+{
+"empty"
+}
+POST url/notify-signup
+{
+"empty"
+}
+Websocket url
+{
+  "action": "join",
+  "room": "notify-upload"
+}
+Websocket url
+{
+  "action": "join",
+  "room": "notify-login"
+}
+Websocket url
+{
+  "action": "join",
+  "room": "notify-signup"
+}
+```
+* **Service Descovery**:
+```json
+POST url/register
+{
+  "service_name": "service_name_",
+  "service_address": "service_address",
+  "service_port": "service_port"
+}
+GET url/status
+{
+  "empty"
+}
+```
+### Important
+To test the endpoints you must first signup, then login and add the JWT token to the bearer in Authentication
+
+### Deployment and testing
+To deploy the ptoject and test docker images run **docker-compose up**. 
+
+
+
+
+### Conclusion
+These additions enhance the reliability, scalability, and observability of the Beats Marketplace system. By incorporating service discovery, the ELK stack, data replication, and warehousing, the system is better equipped to handle large-scale operations and ensure data consistency and high availability.

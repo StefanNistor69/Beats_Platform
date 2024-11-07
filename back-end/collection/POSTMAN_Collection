@@ -1,0 +1,188 @@
+{
+	"info": {
+		"_postman_id": "cb23278c-119d-48a1-8827-11ad850c5756",
+		"name": "New Collection",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "29743884"
+	},
+	"item": [
+		{
+			"name": "login",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// Test for concurrent task limit exceeded message\r",
+							"pm.test(\"Check if task limit exceeded\", function () {\r",
+							"    var jsonData = pm.response.json();\r",
+							"\r",
+							"    if (pm.response.code === 429) {\r",
+							"        pm.test(\"Task limit exceeded message\", function () {\r",
+							"            pm.expect(jsonData).to.have.property('error', 'Concurrent task limit exceeded');\r",
+							"        });\r",
+							"    } else {\r",
+							"        pm.test(\"Request processed successfully\", function () {\r",
+							"            pm.response.to.have.status(200); // Or any valid status like 201 for successful POST\r",
+							"        });\r",
+							"    }\r",
+							"});\r",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {}
+			},
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n\r\n  \r\n  \"email\": \"email\",\r\n  \"password\": \"password\"\r\n\r\n}"
+				},
+				"url": {
+					"raw": "http://localhost:3000/user/login",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3000",
+					"path": [
+						"user",
+						"login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "signup",
+			"request": {
+				"method": "GET",
+				"header": []
+			},
+			"response": []
+		},
+		{
+			"name": "service status",
+			"request": {
+				"method": "GET",
+				"header": []
+			},
+			"response": []
+		},
+		{
+			"name": "upload",
+			"request": {
+				"method": "GET",
+				"header": []
+			},
+			"response": []
+		},
+		{
+			"name": "service register",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"service_name\": \"service_name\",\r\n  \"service_address\": \"service_address\",\r\n  \"service_port\": \"service_port\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8500/register",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8500",
+					"path": [
+						"register"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "status",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3000/status",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3000",
+					"path": [
+						"status"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "notify-login",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:5002/notify-login",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "5002",
+					"path": [
+						"notify-login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "notify-signup",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:5002/notify-signup",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "5002",
+					"path": [
+						"notify-signup"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
