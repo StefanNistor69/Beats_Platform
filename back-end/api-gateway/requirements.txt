@@ -1,0 +1,4 @@
+Flask>=2.0.0
+Werkzeug>=2.0.0
+requests==2.27.1
+flask-limiter==2.7.0

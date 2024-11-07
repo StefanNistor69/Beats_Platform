@@ -1,0 +1,20 @@
+# Ignore Node modules
+node_modules/
+
+# Ignore environment files
+.env
+*.env
+
+# Ignore Python virtual environment called 'myenv'
+myenv/
+
+# Ignore macOS system files
+.DS_Store
+
+# Ignore log files
+*.log
+
+# Ignore other temporary or cache files
+*.tmp
+.cache/
+docker-compose.yml

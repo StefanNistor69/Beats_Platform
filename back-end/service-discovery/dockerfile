@@ -1,0 +1,12 @@
+# service-discovery/Dockerfile
+FROM python:3.9-slim
+
+WORKDIR /app
+
+COPY . .
+
+RUN pip install flask
+
+EXPOSE 8500
+
+CMD ["python", "service-discovery.py"]
