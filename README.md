@@ -201,7 +201,7 @@
 
 ### Updated System Diagram
 
-![Updated System Diagram](images/diagram_lab2.png)
+![Updated System Diagram](images/System_Diagram.drawio(1).png)
 
 ### Theoretical Description of New System Additions
 
