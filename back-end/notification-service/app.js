@@ -4,68 +4,53 @@ const WebSocket = require('ws');
 const { createClient } = require('redis');
 const client = require('prom-client');
 
+// Collect default metrics for Prometheus
 const collectDefaultMetrics = client.collectDefaultMetrics;
 collectDefaultMetrics();
-
-// Create a Redis client (for redis v4.x)
-// Connect to the Redis service defined in Docker Compose using its service name ("redis")
-const redisClient = createClient({
-  url: `redis://${process.env.REDIS_HOST || 'redis'}:${process.env.REDIS_PORT || 6379}`,
-});
-
-redisClient
-  .connect()
-  .then(() => {
-    console.log('Connected to Redis');
-  })
-  .catch((err) => {
-    console.error('Redis connection error:', err);
-  });
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
-
 const PORT = process.env.PORT || 5002;
 const CACHE_EXPIRATION = 10 * 5; // 5 minutes TTL for caching
 
-// Middleware to parse incoming JSON requests
+// Shard configurations
+const redisShard1 = createClient({ url: 'redis://redis-shard1-primary:6379' });
+const redisShard2 = createClient({ url: 'redis://redis-shard2-primary:6379' });
+
+// Connect Redis shards
+[redisShard1, redisShard2].forEach((shard, index) => {
+  shard.connect()
+    .then(() => console.log(`Connected to Redis Shard ${index + 1}`))
+    .catch((err) => console.error(`Redis Shard ${index + 1} connection error:`, err));
+});
+
+// Determine the Redis shard based on key
+const getRedisShard = (key) => {
+  const hash = key.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return hash % 2 === 0 ? redisShard1 : redisShard2;
+};
+
+// Middleware to parse JSON
 app.use(express.json());
 
-// Store connected clients by room
+// WebSocket management
 let rooms = {};
-
-// WebSocket connection event
 wss.on('connection', (ws) => {
-  console.log('Client connected');
-
-  // Assign client to a room when they join
   ws.on('message', (message) => {
     const parsedMessage = JSON.parse(message);
-
     if (parsedMessage.action === 'join') {
       const room = parsedMessage.room;
-
-      // Initialize room if not exists
-      if (!rooms[room]) {
-        rooms[room] = [];
-      }
-
-      // Add client to the room
+      if (!rooms[room]) rooms[room] = [];
       rooms[room].push(ws);
-      console.log(`Client joined room: ${room}`);
-
       ws.send(JSON.stringify({ message: `Joined room: ${room}` }));
     }
   });
 
-  // WebSocket disconnection event
   ws.on('close', () => {
-    console.log('Client disconnected');
-    // Remove the client from all rooms they were part of
-    for (let room in rooms) {
+    Object.keys(rooms).forEach((room) => {
       rooms[room] = rooms[room].filter((client) => client !== ws);
-    }
+    });
   });
 });
 
@@ -79,23 +64,23 @@ const notifyRoom = (room, message) => {
   });
 };
 
-// Function to cache notifications
+// Cache notification in the appropriate shard
 const cacheNotification = async (key, notification) => {
+  const shard = getRedisShard(key);
   try {
-    await redisClient.setEx(key, CACHE_EXPIRATION, notification);
-    console.log(`Notification cached with key: ${key}`);
+    await shard.setEx(key, CACHE_EXPIRATION, notification);
+    console.log(`Notification cached on shard for key: ${key}`);
   } catch (err) {
     console.error('Error caching notification:', err);
   }
 };
 
-// Function to check cache
+// Get cached notification from the appropriate shard
 const getCachedNotification = async (key) => {
+  const shard = getRedisShard(key);
   try {
-    const cachedNotification = await redisClient.get(key);
-    if (cachedNotification) {
-      console.log(`Cache hit for key: ${key}`);
-    }
+    const cachedNotification = await shard.get(key);
+    if (cachedNotification) console.log(`Cache hit for key: ${key}`);
     return cachedNotification;
   } catch (err) {
     console.error('Error fetching from cache:', err);
@@ -103,7 +88,7 @@ const getCachedNotification = async (key) => {
   }
 };
 
-// Expose notification endpoints for different notification types
+// Notification endpoints
 app.post('/notify-login', async (req, res) => {
   const notificationMessage = 'Login Successful';
   const cacheKey = 'notify-login';
@@ -116,11 +101,7 @@ app.post('/notify-login', async (req, res) => {
   notifyRoom('notify-login', notificationMessage);
   await cacheNotification(cacheKey, notificationMessage);
 
-  res.status(200).json({ message: 'Login notification received and cached successfully.' });
-});
-
-app.get('/status', (req, res) => {
-  res.status(200).json({ status: 'Notification Service is running' });
+  res.status(200).json({ message: 'Login notification sent and cached successfully.' });
 });
 
 app.post('/notify-signup', async (req, res) => {
@@ -135,7 +116,7 @@ app.post('/notify-signup', async (req, res) => {
   notifyRoom('notify-signup', notificationMessage);
   await cacheNotification(cacheKey, notificationMessage);
 
-  res.status(200).json({ message: 'Signup notification received and cached successfully.' });
+  res.status(200).json({ message: 'Signup notification sent and cached successfully.' });
 });
 
 app.post('/notify-upload', async (req, res) => {
@@ -150,18 +131,29 @@ app.post('/notify-upload', async (req, res) => {
   notifyRoom('notify-upload', notificationMessage);
   await cacheNotification(cacheKey, notificationMessage);
 
-  res.status(200).json({ message: 'Upload notification received and cached successfully.' });
+  res.status(200).json({ message: 'Upload notification sent and cached successfully.' });
 });
 
+app.post('/notify', async (req, res) => {
+  const { room, message } = req.body;
+  if (!room || !message) return res.status(400).json({ error: 'Missing room or message' });
+
+  const cacheKey = `notify-${room}`;
+  const cachedNotification = await getCachedNotification(cacheKey);
+  if (cachedNotification) return res.status(200).json({ message: `Cached: ${cachedNotification}` });
+
+  notifyRoom(room, message);
+  await cacheNotification(cacheKey, message);
+
+  res.status(200).json({ message: 'Notification sent and cached successfully.' });
+});
+
+app.get('/status', (req, res) => res.status(200).json({ status: 'Notification Service is running' }));
 
 app.get('/metrics', async (req, res) => {
   res.set('Content-Type', client.register.contentType);
   res.end(await client.register.metrics());
 });
 
-
-
 // Start the server
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Notification Service running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Notification Service running on port ${PORT}`));
