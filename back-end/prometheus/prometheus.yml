@@ -1,0 +1,28 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  - job_name: "api-gateway"
+    static_configs:
+      - targets: ["api-gateway:3000"]
+
+  - job_name: "notification-service"
+    static_configs:
+      - targets: ["notification-service:5002"]
+
+  - job_name: "userfile-service"
+    static_configs:
+      - targets: ["userfile-service-1:5001", "userfile-service-2:5001", "userfile-service-3:5001"]
+  
+  - job_name: "service-discovery"
+    static_configs:
+      - targets: ["service-discovery:8500"]
+

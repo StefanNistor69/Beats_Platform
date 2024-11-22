@@ -6,6 +6,13 @@ const multerS3 = require('multer-s3');
 const axios = require('axios');
 const authenticateJWT = require('./middleware/authenticateJWT'); // JWT Middleware
 require('dotenv').config();
+const client = require('prom-client');
+
+
+const collectDefaultMetrics = client.collectDefaultMetrics;
+collectDefaultMetrics();
+
+
 
 console.log("S3 Bucket Name:", process.env.AWS_S3_BUCKET_NAME); // Log the S3 Bucket Name to verify it's loaded correctly
 
@@ -78,6 +85,14 @@ app.post('/beats/upload', authenticateJWT, upload.single('beat'), async (req, re
 app.get('/status', (req, res) => {
   res.status(200).json({ status: 'UserFile Service is running' });
 });
+
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', client.register.contentType);
+  res.end(await client.register.metrics());
+});
+
+
+
 
 // Start the server
 const PORT = process.env.PORT || 5001;

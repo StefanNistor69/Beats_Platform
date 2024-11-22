@@ -1,5 +1,6 @@
-Flask>=2.0.0
-Werkzeug>=2.0.0
+Flask==2.3.2
+Werkzeug>=2.3.0
 requests==2.27.1
-flask-limiter==2.7.0
+flask-limiter==3.0.0
 pybreaker>=0.7.0
+prometheus-flask-exporter>=0.22.0

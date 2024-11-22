@@ -2,8 +2,12 @@
 
 from flask import Flask, request, jsonify
 from threading import Lock
+from prometheus_flask_exporter import PrometheusMetrics
 
 app = Flask(__name__)
+
+metrics = PrometheusMetrics(app)
+metrics.info("service_discovery_info", "Service Discovery metrics", version="1.0.0")
 
 # In-memory registry
 registry = {}

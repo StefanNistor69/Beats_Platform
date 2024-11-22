@@ -4,15 +4,20 @@ import os
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from pybreaker import CircuitBreaker
+from prometheus_flask_exporter import PrometheusMetrics
 
 app = Flask(__name__)
 
 # Set up rate limiting (5 requests per minute)
 limiter = Limiter(
-    key_func=get_remote_address,
-    app=app,
-    default_limits=["5 per minute"]
+    key_func=get_remote_address
 )
+
+
+metrics = PrometheusMetrics(app)
+metrics.info("api_gateway_info", "API Gateway metrics", version="1.0.0")
+
+
 
 # Circuit breaker configuration
 FAIL_MAX = 3
@@ -60,9 +65,15 @@ def make_request_with_circuit_breaker(url, method, headers=None, data=None, file
         for attempt in range(3):  # Try 3 times per replica
             try:
                 if method == "POST":
-                    response = circuit_breaker.call(
-                        requests.post, service_url, json=data, headers=headers, timeout=10
-                    )
+                    if files:
+                        # Do not set 'Content-Type' header when uploading files
+                        response = circuit_breaker.call(
+                            requests.post, service_url, headers=headers, data=data, files=files, timeout=10
+                        )
+                    else:
+                        response = circuit_breaker.call(
+                            requests.post, service_url, headers=headers, json=data, timeout=10
+                        )
                 
                 # Stop retries on client-side errors
                 if response.status_code >= 400 and response.status_code < 500:

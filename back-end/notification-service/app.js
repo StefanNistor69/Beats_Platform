@@ -2,6 +2,10 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const { createClient } = require('redis');
+const client = require('prom-client');
+
+const collectDefaultMetrics = client.collectDefaultMetrics;
+collectDefaultMetrics();
 
 // Create a Redis client (for redis v4.x)
 // Connect to the Redis service defined in Docker Compose using its service name ("redis")
@@ -148,6 +152,14 @@ app.post('/notify-upload', async (req, res) => {
 
   res.status(200).json({ message: 'Upload notification received and cached successfully.' });
 });
+
+
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', client.register.contentType);
+  res.end(await client.register.metrics());
+});
+
+
 
 // Start the server
 server.listen(PORT, '0.0.0.0', () => {
