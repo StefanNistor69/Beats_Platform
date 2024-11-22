@@ -6,14 +6,17 @@ const { createClient } = require('redis');
 // Create a Redis client (for redis v4.x)
 // Connect to the Redis service defined in Docker Compose using its service name ("redis")
 const redisClient = createClient({
-  url: `redis://${process.env.REDIS_HOST || 'redis'}:${process.env.REDIS_PORT || 6379}`
+  url: `redis://${process.env.REDIS_HOST || 'redis'}:${process.env.REDIS_PORT || 6379}`,
 });
 
-redisClient.connect().then(() => {
-  console.log('Connected to Redis');
-}).catch(err => {
-  console.error('Redis connection error:', err);
-});
+redisClient
+  .connect()
+  .then(() => {
+    console.log('Connected to Redis');
+  })
+  .catch((err) => {
+    console.error('Redis connection error:', err);
+  });
 
 const app = express();
 const server = http.createServer(app);
@@ -31,7 +34,7 @@ let rooms = {};
 // WebSocket connection event
 wss.on('connection', (ws) => {
   console.log('Client connected');
-  
+
   // Assign client to a room when they join
   ws.on('message', (message) => {
     const parsedMessage = JSON.parse(message);
@@ -57,7 +60,7 @@ wss.on('connection', (ws) => {
     console.log('Client disconnected');
     // Remove the client from all rooms they were part of
     for (let room in rooms) {
-      rooms[room] = rooms[room].filter(client => client !== ws);
+      rooms[room] = rooms[room].filter((client) => client !== ws);
     }
   });
 });
@@ -65,7 +68,7 @@ wss.on('connection', (ws) => {
 // Notify clients in a specific room
 const notifyRoom = (room, message) => {
   const clients = rooms[room] || [];
-  clients.forEach(client => {
+  clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(JSON.stringify({ notification: message }));
     }

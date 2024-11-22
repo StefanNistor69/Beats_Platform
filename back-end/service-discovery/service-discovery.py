@@ -29,7 +29,7 @@ def register():
                 "port": service_port
             })
     
-    return jsonify({"message": "Service registered successfully"}), 200
+    return jsonify({"message": f"Service '{service_name}' registered successfully on port {service_port}"}), 200
 
 @app.route('/deregister', methods=['POST'])
 def deregister():
@@ -74,5 +74,3 @@ def status():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8500)
-
-   

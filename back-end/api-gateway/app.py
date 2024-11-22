@@ -3,18 +3,36 @@ import requests
 import os
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from pybreaker import CircuitBreaker
 
 app = Flask(__name__)
 
 # Set up rate limiting (5 requests per minute)
 limiter = Limiter(
-    app,
     key_func=get_remote_address,
+    app=app,
     default_limits=["5 per minute"]
 )
 
+# Circuit breaker configuration
+FAIL_MAX = 3
+RESET_TIMEOUT = 30
+
 # Service Discovery URL
 SERVICE_DISCOVERY_URL = os.getenv('SERVICE_DISCOVERY_URL', 'http://service-discovery:8500')
+
+# List of userfile-service replicas (assuming same port 5001)
+USERFILE_REPLICAS = [
+    {"host": "userfile-service-1", "port": "5001"},
+    {"host": "userfile-service-2", "port": "5001"},
+    {"host": "userfile-service-3", "port": "5001"}
+]
+
+# Create a circuit breaker for each userfile-service replica
+userfile_circuit_breakers = {}
+for replica in USERFILE_REPLICAS:
+    replica_key = f"{replica['host']}:{replica['port']}"
+    userfile_circuit_breakers[replica_key] = CircuitBreaker(fail_max=FAIL_MAX, reset_timeout=RESET_TIMEOUT)
 
 def discover_service(service_name):
     """Discover service address and port from the service discovery."""
@@ -30,12 +48,41 @@ def discover_service(service_name):
         app.logger.error(f"Error discovering service {service_name}: {str(e)}")
         return None, None
 
+def make_request_with_circuit_breaker(url, method, headers=None, data=None, files=None):
+    for replica in USERFILE_REPLICAS:
+        service_url = f"http://{replica['host']}:{replica['port']}/{url}"
+        circuit_breaker = userfile_circuit_breakers[f"{replica['host']}:{replica['port']}"]
+
+        if circuit_breaker.current_state == "open":
+            app.logger.error(f"Skipping replica {service_url} as circuit breaker is open")
+            continue
+
+        for attempt in range(3):  # Try 3 times per replica
+            try:
+                if method == "POST":
+                    response = circuit_breaker.call(
+                        requests.post, service_url, json=data, headers=headers, timeout=10
+                    )
+                
+                # Stop retries on client-side errors
+                if response.status_code >= 400 and response.status_code < 500:
+                    app.logger.error(f"Client error {response.status_code} for {service_url}")
+                    return response.content, response.status_code, response.headers.items()
+
+                if response.status_code in (200, 201):
+                    return response.content, response.status_code, response.headers.items()
+
+            except Exception as e:
+                app.logger.error(f"Attempt {attempt + 1} failed for {service_url}: {str(e)}")
+    return None
+
+
 def ping_service(service_name):
     """Ping the service and check if it is running."""
     host, port = discover_service(service_name)
     if not host or not port:
         return {"service": service_name, "status": "unavailable"}
-    
+
     try:
         response = requests.get(f"http://{host}:{port}/status", timeout=5)
         if response.status_code == 200:
@@ -62,42 +109,37 @@ def status():
 @limiter.limit("5 per minute")  # Apply rate limiting to user-related requests
 def proxy_user_file_service(path):
     try:
-        user_file_service_host, user_file_service_port = discover_service('userfile-service')
-        notification_service_host, notification_service_port = discover_service('notification-service')
+        headers = {'Content-Type': 'application/json'}
+        data = request.json
 
-        if not user_file_service_host or not user_file_service_port:
-            return jsonify({"error": "UserFile Service unavailable"}), 503
-        
-        service_url = f"http://{user_file_service_host}:{user_file_service_port}/user/{path}"
-        
-        if request.method == 'GET':
-            response = requests.get(service_url, timeout=10)
-        elif request.method == 'POST':
-            response = requests.post(service_url, json=request.json, timeout=10)
+        # Log the data being sent
+        app.logger.info(f"Proxying request to {path}: Data={data}, Headers={headers}")
 
-            if path == 'signup' and response.status_code == 201:
-                notify_url = f"http://{notification_service_host}:{notification_service_port}/notify-signup"
-                notify_response = requests.post(notify_url, timeout=10)
-                if notify_response.status_code == 200:
-                    print("Signup notification sent successfully", flush=True)
+        # Make request to userfile-service via circuit breaker
+        result = make_request_with_circuit_breaker(f"user/{path}", request.method, headers=headers, data=data)
+
+        if result:
+            content, status_code, headers_items = result
+
+            # Handle notifications for signup and login
+            if path in ['signup', 'login'] and request.method == 'POST' and status_code in (200, 201):
+                notification_service_host, notification_service_port = discover_service('notification-service')
+                if notification_service_host and notification_service_port:
+                    notify_url = f"http://{notification_service_host}:{notification_service_port}/notify-{path}"
+                    try:
+                        notify_response = requests.post(notify_url, timeout=10)
+                        if notify_response.status_code == 200:
+                            app.logger.info(f"{path.capitalize()} notification sent successfully")
+                        else:
+                            app.logger.error(f"Failed to send {path} notification")
+                    except Exception as e:
+                        app.logger.error(f"Error sending {path} notification: {str(e)}")
                 else:
-                    print("Failed to send signup notification", flush=True)
+                    app.logger.error("Notification service unavailable")
 
-            elif path == 'login' and response.status_code == 200:
-                notify_url = f"http://{notification_service_host}:{notification_service_port}/notify-login"
-                notify_response = requests.post(notify_url, timeout=10)
-                if notify_response.status_code == 200:
-                    print("Login notification sent successfully", flush=True)
-                else:
-                    print("Failed to send login notification", flush=True)
-
-        elif request.method == 'PUT':
-            response = requests.put(service_url, json=request.json, timeout=10)
-        elif request.method == 'DELETE':
-            response = requests.delete(service_url, timeout=10)
-        
-        print("Request Accepted", flush=True)
-        return response.content, response.status_code, response.headers.items()
+            return content, status_code, headers_items
+        else:
+            return jsonify({"error": "All replicas failed. Circuit breakers tripped."}), 503
 
     except requests.exceptions.Timeout:
         return jsonify({"error": "Request timed out"}), 504
@@ -105,19 +147,15 @@ def proxy_user_file_service(path):
     except requests.exceptions.RequestException as e:
         return jsonify({"error": str(e)}), 500
 
+
 # Proxy request to beat upload with rate limiting
 @app.route('/beats/upload', methods=['POST'])
 @limiter.limit("5 per minute")  # Apply rate limiting to beat upload requests
 def proxy_beat_upload():
     try:
-        user_file_service_host, user_file_service_port = discover_service('userfile-service')
+        # Discover notification service
         notification_service_host, notification_service_port = discover_service('notification-service')
 
-        if not user_file_service_host or not user_file_service_port:
-            return jsonify({"error": "UserFile Service unavailable"}), 503
-        
-        service_url = f"http://{user_file_service_host}:{user_file_service_port}/beats/upload"
-        
         if 'beat' in request.files:
             files = {'beat': request.files['beat']}
             data = {
@@ -126,18 +164,30 @@ def proxy_beat_upload():
             }
 
             headers = {'Authorization': request.headers.get('Authorization')}
-            response = requests.post(service_url, files=files, data=data, headers=headers, timeout=10)
 
-            if response.status_code == 201 and notification_service_host and notification_service_port:
-                # Notify notification service
-                notify_url = f"http://{notification_service_host}:{notification_service_port}/notify-upload"
-                notify_response = requests.post(notify_url, timeout=10)
-                if notify_response.status_code == 200:
-                    print("Notification sent successfully", flush=True)
+            # Make request to userfile-service via circuit breaker
+            result = make_request_with_circuit_breaker("beats/upload", "POST", headers=headers, data=data, files=files)
+
+            if result:
+                content, status_code, headers_items = result
+
+                # Handle notification after successful upload
+                if status_code == 201 and notification_service_host and notification_service_port:
+                    notify_url = f"http://{notification_service_host}:{notification_service_port}/notify-upload"
+                    try:
+                        notify_response = requests.post(notify_url, timeout=10)
+                        if notify_response.status_code == 200:
+                            app.logger.info("Beat upload notification sent successfully")
+                        else:
+                            app.logger.error("Failed to send beat upload notification")
+                    except Exception as e:
+                        app.logger.error(f"Error sending beat upload notification: {str(e)}")
                 else:
-                    print("Failed to send notification", flush=True)
+                    app.logger.error("Notification service unavailable or upload failed")
 
-            return response.content, response.status_code, response.headers.items()
+                return content, status_code, headers_items
+            else:
+                return jsonify({"error": "All replicas failed. Circuit breakers tripped."}), 503
         else:
             return jsonify({"error": "No file part in the request"}), 400
 
@@ -148,4 +198,4 @@ def proxy_beat_upload():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=3000, debug=True)
+    app.run(host="0.0.0.0", port=3000, debug=True)

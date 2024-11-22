@@ -1,10 +1,16 @@
-// File: middleware/authenticateJWT.js
-
 const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key';
 
 // Middleware to authenticate JWT
 const authenticateJWT = (req, res, next) => {
+  // Define public paths explicitly
+  const publicPaths = ['/signup', '/login'];
+
+  // Skip JWT authentication for public paths
+  if (req.baseUrl === '/user' && publicPaths.includes(req.path)) {
+    return next();
+  }
+
   const authHeader = req.headers.authorization;
 
   if (authHeader) {
